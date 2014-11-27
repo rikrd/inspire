@@ -1,9 +1,9 @@
 # inspire's setup.py
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name="inspire",
-    packages=["inspire"],
+    packages=find_packages(),
     version="1.0.0.dev1",
     description="Helper library to participate in the INSPIRE challenge",
     author="Ricard Marxer",
@@ -34,5 +34,5 @@ The functions included in this module include:
 
 Additionally it contains functions to create, train and use speech recognition models using HTK.
 """,
-    requires=[]
+    requires=['numpy', 'docopt', 'grako', 'progressbar_ipython']
 )

@@ -7,13 +7,66 @@ Collection of functions useful for the INSPIRE challenge.
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import json
+import logging
+import os
 import pprint as pp
 import collections
+import urllib2
+import progressbar as pb
 
 from . import common
 from . import edit_distance
 
 UTF8_NORMALIZATION = 'NFD'
+
+BASE_URL = 'http://www.ricardmarxer.com/research/inspire_challenge'
+SUBMISSION_URL = '{}/submit'
+DATASET_URL = '{}/download/inspire_dataset_participant_v1.json'.format(BASE_URL)
+LEXICON_URL = '{}/download/inspire_lexicon_ipa_v1.dict'.format(BASE_URL)
+AUDIDATA_URL = '{}/download/audio.zip'.format(BASE_URL)
+
+
+def _download(url, filename=None):
+    filename = filename or url.split('/')[-1]
+    if os.path.isfile(filename):
+        return filename
+
+    try:
+        u = urllib2.urlopen(url)
+    except urllib2.HTTPError:
+        logging.error('Could not download: \n'
+                      '{}\n'
+                      'Please check your internet connection.\n'
+                      'If problem persists inform the challenge organizers.'.format(url))
+        return None
+
+    f = open(filename, 'wb')
+    meta = u.info()
+    file_size = int(meta.getheaders("Content-Length")[0])
+
+    widgets = ['Downloading: ', pb.Percentage(), ' ', pb.Bar(),
+               ' ', pb.ETA(), ' ', pb.FileTransferSpeed()]
+
+    pbar = pb.ProgressBar(widgets=widgets, maxval=file_size).start()
+
+    file_size_dl = 0
+    block_sz = 8192
+    while True:
+        download_buffer = u.read(block_sz)
+        if not download_buffer:
+            break
+
+        file_size_dl += len(download_buffer)
+        f.write(download_buffer)
+
+        pbar.update(file_size_dl)
+
+    pbar.finish()
+
+    print('Finished downloading {}'.format(filename))
+
+    f.close()
+    return filename
 
 
 class MyPrettyPrinter(pp.PrettyPrinter):
@@ -81,12 +134,40 @@ class Submission(dict):
             .setdefault(str(index), {})[phonemes] = phonemes_probability
 
     def full_task(self, token_id, pronunciation, pronunciation_probability):
+        """Provide the prediction of the full task.
+
+        This is function is used to predict the porbability of a given pronunciation being reported for a given token.
+
+        :param token_id: The token for which the prediction is being provided
+        :param pronunciation: The pronunciation for which the prediction is being provided
+        :param pronunciation_probability: The probability of the pronunciation for the given token
+        """
+
+        if not 0. < pronunciation_probability < 1.:
+            logging.warning()
+
         self['tokens'].setdefault(token_id, {}) \
             .setdefault('full', {}) \
             .setdefault('pronunciations_probability', {})[pronunciation] = pronunciation_probability
 
+    def save(self, filename):
+        """Save the submission into a file.
+
+        :param filename: where to save the submission in JSON format
+        """
+        with open(filename, 'w') as f:
+            json.dump(self, f, indent=2)
+
     def __repr__(self):
         return json.dumps(self, indent=2)
+
+
+def download_dataset(filename=None):
+    return _download(DATASET_URL, filename=filename)
+
+
+def download_lexicon(filename=None):
+    return _download(LEXICON_URL, filename=filename)
 
 
 def load_wordlist(wordlist_filename):
@@ -103,13 +184,6 @@ def load_dataset(dataset_filename):
         return Dataset(json.load(dataset_file))
 
     return {}
-
-
-def save_submission(submission, submission_filename):
-    with open(submission_filename, 'w') as f:
-        json.dump(submission, f, indent=2)
-
-    return
 
 
 def _combine_dicts(*args):
