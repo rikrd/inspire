@@ -1,19 +1,18 @@
 # inspire's setup.py
-from distutils.core import setup
+from setuptools import setup
 
 setup(
     name="inspire",
     packages=["inspire"],
-    version="1.0.0",
+    version="1.0.0.dev1",
     description="Helper library to participate in the INSPIRE challenge",
     author="Ricard Marxer",
     author_email="r.marxer@sheffield.ac.uk",
-    url="http://www.ricardmarxer.com/research/inspire_challenge",
-    download_url="http://chardet.feedparser.org/download/python3-chardet-1.0.1.tgz",
+    url="https://github.com/rikrd/inspire",
     keywords=["intelligibility", "speech", "evaluation"],
     classifiers=[
         "Programming Language :: Python",
-        "Development Status :: 4 - Beta",
+        "Development Status :: 3 - Alpha",
         "Environment :: Other Environment",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)",
@@ -34,5 +33,6 @@ The functions included in this module include:
  - submitting a participation
 
 Additionally it contains functions to create, train and use speech recognition models using HTK.
-"""
+""",
+    requires=[]
 )
