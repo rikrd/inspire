@@ -20,7 +20,8 @@ from . import edit_distance
 UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://www.ricardmarxer.com/research/inspire_challenge'
-SUBMISSION_URL = '{}/submit'
+#BASE_URL = 'localhost:5000'
+SUBMISSION_URL = 'http://localhost:5000/submit'
 DATASET_URL = '{}/download/inspire_dataset_participant_v1.json'.format(BASE_URL)
 LEXICON_URL = '{}/download/inspire_lexicon_ipa_v1.dict'.format(BASE_URL)
 AUDIDATA_URL = '{}/download/audio.zip'.format(BASE_URL)
@@ -117,11 +118,13 @@ class Lexicon(dict):
 
 
 class Submission(dict):
-    def __init__(self, authors=[], email='', challenge_edition='', lexicon=None):
+    def __init__(self, authors=[], email='', challenge_edition='', lexicon_id=None, dataset_id=None, description=''):
         self.update({'metadata': {'authors': authors,
                                   'email': email,
-                                  'challenge_edition': challenge_edition},
-                     'lexicon': lexicon,
+                                  'challenge_edition': challenge_edition,
+                                  'description': description,
+                                  'lexicon_id': lexicon_id,
+                                  'dataset_id': dataset_id},
                      'tokens': {}})
 
     def where_task(self, token_id, confusion_probability):
@@ -158,6 +161,35 @@ class Submission(dict):
         with open(filename, 'w') as f:
             json.dump(self, f, indent=2)
 
+    def submit(self, password):
+        """Submits the participation to the web site.
+
+        The passwords is sent as plain text.
+
+        :return: the evaluation results.
+        """
+
+        data = json.dumps({'email': self['metadata']['email'],
+                           'password': password,
+                           'submission': self})
+        req = urllib2.Request(SUBMISSION_URL, data, {'Content-Type': 'application/json'})
+        f = urllib2.urlopen(req)
+        resp = f.read()
+        f.close()
+
+        try:
+            response = json.loads(resp)
+
+        except urllib2.HTTPError as e:
+            logging.error('Error while submitting the participation. {}'.format(e))
+            return {}
+
+        if 'error' in response:
+            logging.error('Error while processing the participation. {}'.format(response['error']))
+            return {}
+
+        return response
+
     def __repr__(self):
         return json.dumps(self, indent=2)
 
@@ -179,11 +211,20 @@ def load_lexicon(lexicon_filename):
                     for k, v in common.parse_dictionary(lexicon_filename).items()})
 
 
+def loads_lexicon(lexicon_file):
+    return Lexicon({k: [pron.split(' ') for pron in v]
+                    for k, v in common.parses_dictionary(lexicon_file).items()})
+
+
 def load_dataset(dataset_filename):
     with open(dataset_filename) as dataset_file:
-        return Dataset(json.load(dataset_file))
+        return loads_dataset(dataset_file)
 
     return {}
+
+
+def loads_dataset(dataset_file):
+    return Dataset(json.load(dataset_file))
 
 
 def _combine_dicts(*args):
@@ -194,15 +235,21 @@ def _combine_dicts(*args):
     return dict(all_dict)
 
 
-def get_edit_scripts(pron_a, pron_b):
+def get_edit_scripts(pron_a, pron_b, edit_costs=(1.0, 1.0, 1.0)):
     """Get the edit scripts to transform between two given pronunciations.
 
     :param pron_a: Source pronunciation as list of strings, each string corresponding to a phoneme
     :param pron_b: Target pronunciation as list of strings, each string corresponding to a phoneme
+    :param edit_costs: Costs of insert, replace and delete respectively
     :return: List of edit scripts.  Each edit script is represented as a list of operations,
                 where each operation is a dictionary.
     """
-    distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b)
+    op_costs = {'insert': lambda x: edit_costs[0],
+                'match': lambda x, y: 0 if x == y else edit_costs[1],
+                'delete': lambda x: edit_costs[2]}
+
+    distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b, op_costs=op_costs)
+
     return [script.to_primitive() for script in scripts]
 
 

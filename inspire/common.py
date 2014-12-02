@@ -53,20 +53,26 @@ def parse_wordlist(list_words_filename):
 
 
 def parse_dictionary(dictionary_filename):
-    dictionary = collections.defaultdict(set)
     with codecs.open(dictionary_filename, 'r', 'utf-8') as f:
-        for row, line in enumerate(f):
-            line = line.strip()
-            if line.startswith('#'):
-                continue
+        return parses_dictionary(f.read())
 
-            try:
-                key, value = line.split(None, 1)
 
-            except ValueError:
-                raise ValueError(u'Error parsing line {} of {}.  "{}"'.format(row, dictionary_filename, line))
-            dictionary[unicodedata.normalize(UTF8_NORMALIZATION, key)].add(
-                unicodedata.normalize(UTF8_NORMALIZATION, value))
+def parses_dictionary(dictionary_buffer):
+    dictionary = collections.defaultdict(set)
+
+    for row, line in enumerate(dictionary_buffer.splitlines()):
+        line = line.strip()
+        if line.startswith('#'):
+            continue
+
+        try:
+            key, value = line.split(None, 1)
+
+        except ValueError:
+            raise ValueError(u'Error parsing line {}.  "{}"'.format(row, line))
+
+        dictionary[unicodedata.normalize(UTF8_NORMALIZATION, unicode(key))].add(
+            unicodedata.normalize(UTF8_NORMALIZATION, unicode(value)))
 
     return dictionary
 
