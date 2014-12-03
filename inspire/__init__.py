@@ -19,12 +19,12 @@ from . import edit_distance
 
 UTF8_NORMALIZATION = 'NFD'
 
-BASE_URL = 'http://www.ricardmarxer.com/research/inspire_challenge'
-#BASE_URL = 'localhost:5000'
-SUBMISSION_URL = 'http://localhost:5000/submit'
-DATASET_URL = '{}/download/inspire_dataset_participant_v1.json'.format(BASE_URL)
-LEXICON_URL = '{}/download/inspire_lexicon_ipa_v1.dict'.format(BASE_URL)
-AUDIDATA_URL = '{}/download/audio.zip'.format(BASE_URL)
+BASE_URL = 'http://localhost:5000'
+
+SUBMISSION_URL = '{}/submit'.format(BASE_URL)
+DATASET_URL = '{}/download/dataset'.format(BASE_URL)
+LEXICON_URL = '{}/download/lexicon'.format(BASE_URL)
+AUDIDATA_URL = '{}/download/audio'.format(BASE_URL)
 
 
 def _download(url, filename=None):
@@ -128,12 +128,11 @@ class Submission(dict):
                      'tokens': {}})
 
     def where_task(self, token_id, confusion_probability):
-        self['tokens'].setdefault(token_id, {})['where'] = {'confusion_probability': list(confusion_probability)}
+        self['tokens'].setdefault(token_id, {})['where'] = list(confusion_probability)
 
     def what_task(self, token_id, index, phonemes, phonemes_probability):
         self['tokens'].setdefault(token_id, {}) \
             .setdefault('what', {}) \
-            .setdefault('per_index_phonemes_probability', {}) \
             .setdefault(str(index), {})[phonemes] = phonemes_probability
 
     def full_task(self, token_id, pronunciation, pronunciation_probability):
@@ -150,8 +149,7 @@ class Submission(dict):
             logging.warning()
 
         self['tokens'].setdefault(token_id, {}) \
-            .setdefault('full', {}) \
-            .setdefault('pronunciations_probability', {})[pronunciation] = pronunciation_probability
+            .setdefault('full', {})[pronunciation] = pronunciation_probability
 
     def save(self, filename):
         """Save the submission into a file.
