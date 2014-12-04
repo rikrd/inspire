@@ -11,6 +11,8 @@ import logging
 import os
 import pprint as pp
 import collections
+import re
+import shlex
 import urllib2
 import progressbar as pb
 
@@ -21,11 +23,8 @@ UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://143.167.9.43:5000'
 
-def _download(url, filename=None):
-    filename = filename or url.split('/')[-1]
-    if os.path.isfile(filename):
-        return filename
 
+def _download(url, filename=None):
     try:
         u = urllib2.urlopen(url)
     except urllib2.HTTPError:
@@ -35,8 +34,17 @@ def _download(url, filename=None):
                       'If problem persists inform the challenge organizers.'.format(url))
         return None
 
-    f = open(filename, 'wb')
     meta = u.info()
+
+    reported_filename = shlex.split(re.findall(r'filename=(\S+)',
+                                               meta.getheaders('Content-Disposition')[0])[0])[0]
+
+    filename = filename or reported_filename
+
+    if os.path.isfile(filename):
+        return filename
+
+    f = open(filename, 'wb')
     file_size = int(meta.getheaders("Content-Length")[0])
 
     widgets = ['Downloading: ', pb.Percentage(), ' ', pb.Bar(),
