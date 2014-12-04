@@ -19,7 +19,7 @@ from . import edit_distance
 
 UTF8_NORMALIZATION = 'NFD'
 
-BASE_URL = 'http://localhost:5000'
+BASE_URL = 'http://143.167.9.43:5000'
 
 SUBMISSION_URL = '{}/submit'.format(BASE_URL)
 DATASET_URL = '{}/download/dataset'.format(BASE_URL)
