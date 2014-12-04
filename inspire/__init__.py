@@ -159,7 +159,7 @@ class Submission(dict):
         with open(filename, 'w') as f:
             json.dump(self, f, indent=2)
 
-    def submit(self, password):
+    def submit(self, password=''):
         """Submits the participation to the web site.
 
         The passwords is sent as plain text.
