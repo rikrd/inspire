@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name="inspire",
     packages=find_packages(),
-    version="1.0.0.dev2",
+    version="1.0.1",
     description="Helper library to participate in the INSPIRE challenge",
     author="Ricard Marxer",
     author_email="r.marxer@sheffield.ac.uk",
@@ -12,7 +12,7 @@ setup(
     keywords=["intelligibility", "speech", "evaluation"],
     classifiers=[
         "Programming Language :: Python",
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Environment :: Other Environment",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: GNU Library or Lesser General Public License (LGPL)",
@@ -34,5 +34,6 @@ The functions included in this module include:
 
 Additionally it contains functions to create, train and use speech recognition models using HTK.
 """,
-    requires=['numpy', 'docopt', 'grako', 'progressbar_ipython']
+    requires=['numpy', 'docopt', 'grako', 'progressbar_ipython'],
+    install_requires=['numpy', 'docopt', 'grako', 'progressbar_ipython']
 )

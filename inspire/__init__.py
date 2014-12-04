@@ -21,12 +21,6 @@ UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://143.167.9.43:5000'
 
-SUBMISSION_URL = '{}/submit'.format(BASE_URL)
-DATASET_URL = '{}/download/dataset'.format(BASE_URL)
-LEXICON_URL = '{}/download/lexicon'.format(BASE_URL)
-AUDIDATA_URL = '{}/download/audio'.format(BASE_URL)
-
-
 def _download(url, filename=None):
     filename = filename or url.split('/')[-1]
     if os.path.isfile(filename):
@@ -170,7 +164,8 @@ class Submission(dict):
         data = json.dumps({'email': self['metadata']['email'],
                            'password': password,
                            'submission': self})
-        req = urllib2.Request(SUBMISSION_URL, data, {'Content-Type': 'application/json'})
+        req = urllib2.Request('{}/submit'.format(BASE_URL),
+                              data, {'Content-Type': 'application/json'})
         f = urllib2.urlopen(req)
         resp = f.read()
         f.close()
@@ -193,11 +188,11 @@ class Submission(dict):
 
 
 def download_dataset(filename=None):
-    return _download(DATASET_URL, filename=filename)
+    return _download('{}/download/dataset'.format(BASE_URL), filename=filename)
 
 
 def download_lexicon(filename=None):
-    return _download(LEXICON_URL, filename=filename)
+    return _download('{}/download/lexicon'.format(BASE_URL), filename=filename)
 
 
 def load_wordlist(wordlist_filename):
