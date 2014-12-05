@@ -57,6 +57,7 @@ def _download_url(url, filename=None):
     filename = filename or reported_filename
 
     if os.path.isfile(filename):
+        u.close()
         return filename
 
     f = open(filename, 'wb')
@@ -84,6 +85,7 @@ def _download_url(url, filename=None):
     print('Finished downloading {}'.format(filename))
 
     f.close()
+    u.close()
     return filename
 
 
@@ -200,7 +202,37 @@ class Submission(dict):
         data = json.dumps({'email': self['metadata']['email'],
                            'password': password,
                            'submission': self})
-        req = urllib2.Request('{}/submit'.format(BASE_URL),
+        req = urllib2.Request('{}/submit_with_login'.format(BASE_URL),
+                              data, {'Content-Type': 'application/json'})
+        f = urllib2.urlopen(req)
+        resp = f.read()
+        f.close()
+
+        try:
+            response = json.loads(resp)
+
+        except urllib2.HTTPError as e:
+            logging.error('Error while submitting the participation. {}'.format(e))
+            return {}
+
+        if 'error' in response:
+            logging.error('Error while processing the participation. {}'.format(response['error']))
+            return {}
+
+        return response
+
+    def evaluate(self, password=''):
+        """Submits the participation to the web site.
+
+        The passwords is sent as plain text.
+
+        :return: the evaluation results.
+        """
+
+        data = json.dumps({'email': self['metadata']['email'],
+                           'password': password,
+                           'submission': self})
+        req = urllib2.Request('{}/evaluate_with_login'.format(BASE_URL),
                               data, {'Content-Type': 'application/json'})
         f = urllib2.urlopen(req)
         resp = f.read()
