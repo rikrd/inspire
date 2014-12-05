@@ -24,7 +24,22 @@ UTF8_NORMALIZATION = 'NFD'
 BASE_URL = 'http://143.167.9.43:5000'
 
 
-def _download(url, filename=None):
+def _get_url(url):
+    try:
+        u = urllib2.urlopen(url)
+        resp = u.read()
+        u.close()
+    except urllib2.HTTPError:
+        logging.error('Could not get: \n'
+                      '{}\n'
+                      'Please check your internet connection.\n'
+                      'If problem persists inform the challenge organizers.'.format(url))
+        return '{}'
+
+    return resp
+
+
+def _download_url(url, filename=None):
     try:
         u = urllib2.urlopen(url)
     except urllib2.HTTPError:
@@ -94,6 +109,20 @@ def pprint(obj, **kwargs):
     printer.pprint(obj)
 
 
+class EvaluationSetting(dict):
+    def __init__(self, *args, **kwargs):
+        self.update(*args, **kwargs)
+
+    def __repr__(self):
+        return json.dumps(self, indent=2)
+
+    def download_dataset(self, filename=None):
+        return _download_url('{}/download/dataset/{}'.format(BASE_URL, self['dataset_id']), filename=filename)
+
+    def download_lexicon(self, filename=None):
+        return _download_url('{}/download/lexicon/{}'.format(BASE_URL, self['lexicon_id']), filename=filename)
+
+
 class Dataset(dict):
     def __init__(self, *args, **kwargs):
         self.update(*args, **kwargs)
@@ -120,13 +149,12 @@ class Lexicon(dict):
 
 
 class Submission(dict):
-    def __init__(self, authors=[], email='', challenge_edition='', lexicon_id=None, dataset_id=None, description=''):
-        self.update({'metadata': {'authors': authors,
-                                  'email': email,
-                                  'challenge_edition': challenge_edition,
+    def __init__(self, email='', evaluation_setting=None, description=''):
+        evaluation_setting_id = evaluation_setting['id'] if evaluation_setting is not None else None
+
+        self.update({'metadata': {'email': email,
                                   'description': description,
-                                  'lexicon_id': lexicon_id,
-                                  'dataset_id': dataset_id},
+                                  'evaluation_setting_id': evaluation_setting_id},
                      'tokens': {}})
 
     def where_task(self, token_id, confusion_probability):
@@ -195,12 +223,12 @@ class Submission(dict):
         return json.dumps(self, indent=2)
 
 
-def download_dataset(filename=None):
-    return _download('{}/download/dataset'.format(BASE_URL), filename=filename)
+def get_evaluation_setting(setting_id=None):
+    evaluation_setting_url = '{}/evaluation_setting'.format(BASE_URL)
+    if setting_id is not None:
+        evaluation_setting_url += '/{}'.format(setting_id)
 
-
-def download_lexicon(filename=None):
-    return _download('{}/download/lexicon'.format(BASE_URL), filename=filename)
+    return EvaluationSetting(json.loads(_get_url(evaluation_setting_url)))
 
 
 def load_wordlist(wordlist_filename):
