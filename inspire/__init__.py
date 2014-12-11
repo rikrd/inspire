@@ -119,10 +119,10 @@ class EvaluationSetting(dict):
         return json.dumps(self, indent=2)
 
     def download_dataset(self, filename=None):
-        return _download_url('{}/download/dataset/{}'.format(BASE_URL, self['dataset_id']), filename=filename)
+        return _download_url('{}/download/dataset/{}'.format(BASE_URL, self['id']), filename=filename)
 
     def download_lexicon(self, filename=None):
-        return _download_url('{}/download/lexicon/{}'.format(BASE_URL, self['lexicon_id']), filename=filename)
+        return _download_url('{}/download/lexicon/{}'.format(BASE_URL, self['id']), filename=filename)
 
 
 class Dataset(dict):
