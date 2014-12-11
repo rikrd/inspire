@@ -200,8 +200,8 @@ def best_transforms(src, trg, op_costs=None):
 
 
 if __name__ == '__main__':
-    a = 'm u ch a'
-    b = 'm u ch o s'
+    a = u'm u ch a'
+    b = u'm u ch o s'
 
     a = u'k w i ð̞ a'
     b = u'i ð̞ a'
@@ -222,5 +222,4 @@ if __name__ == '__main__':
     print('costs:\n{}'.format(costs))
     print('ops:\n{}'.format(ops))
     print(transfs[0].to_json())
-    [transf.print_colors() for transf in transfs]
-    
+    for transf in transfs: transf.print_colors()
