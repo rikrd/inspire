@@ -21,7 +21,7 @@ from . import edit_distance
 
 UTF8_NORMALIZATION = 'NFD'
 
-BASE_URL = 'http://143.167.9.43:5000'
+BASE_URL = 'http://localhost:5000'
 
 
 def _get_url(url):
