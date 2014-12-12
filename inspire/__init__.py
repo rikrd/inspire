@@ -18,6 +18,7 @@ import progressbar as pb
 
 from . import common
 from . import edit_distance
+import time
 
 UTF8_NORMALIZATION = 'NFD'
 
@@ -213,13 +214,13 @@ class Submission(dict):
 
         except urllib2.HTTPError as e:
             logging.error('Error while submitting the participation. {}'.format(e))
-            return {}
+            return Job()
 
         if 'error' in response:
             logging.error('Error while processing the participation. {}'.format(response['error']))
-            return {}
+            return Job()
 
-        return response
+        return Job(response)
 
     def evaluate(self, password=''):
         """Submits the participation to the web site.
@@ -243,16 +244,69 @@ class Submission(dict):
 
         except urllib2.HTTPError as e:
             logging.error('Error while submitting the participation. {}'.format(e))
-            return {}
+            return Job()
 
         if 'error' in response:
             logging.error('Error while processing the participation. {}'.format(response['error']))
-            return {}
+            return Job()
 
-        return response
+        return Job(response)
 
     def __repr__(self):
         return json.dumps(self, indent=2)
+
+
+class Job(dict):
+    _ready_states = {'SUCCESS', 'FAILURE'}
+
+    def __init__(self, *args, **kwargs):
+        self.update(*args, **kwargs)
+
+    def __repr__(self):
+        return json.dumps(self, indent=2)
+
+    def status(self):
+        if 'task_id' not in self:
+            logging.error('This job has not succeed.')
+            return {}
+
+        req = urllib2.Request('{}/task/{}/status'.format(BASE_URL, self['task_id']))
+
+        f = urllib2.urlopen(req)
+        resp = f.read()
+        f.close()
+
+        return json.loads(resp)
+
+    def result(self):
+        widgets = ['Processing: ', pb.Percentage(), ' ', pb.Bar(), ' ', pb.ETA()]
+
+        pbar = pb.ProgressBar(widgets=widgets, maxval=100).start()
+
+        while True:
+            task_status = self.status()['task']
+
+            if task_status['status'] == 'PROGRESS':
+                if 'count' in task_status['result'] and 'total' in task_status['result']:
+                    progress = int(float(task_status['result']['count']) / task_status['result']['total'] * 100)
+                else:
+                    progress = None
+
+                pbar.update(progress)
+
+            elif task_status['status'] in self._ready_states:
+                pbar.finish()
+                break
+
+            else:
+                pbar.update()
+
+            time.sleep(0.2)
+
+        return task_status['result']
+
+    def ready(self):
+        return self.status()['task']['status'] in self._ready_states
 
 
 def get_evaluation_setting(setting_id=None):
