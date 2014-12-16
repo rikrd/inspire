@@ -5,6 +5,7 @@ Collection of functions useful for the INSPIRE challenge.
 
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
+import copy
 
 import json
 import logging
@@ -22,7 +23,7 @@ import time
 
 UTF8_NORMALIZATION = 'NFD'
 
-BASE_URL = 'http://localhost:5000'
+BASE_URL = 'http://46.226.110.12:5000'
 
 
 def _get_url(url):
@@ -153,7 +154,12 @@ class Lexicon(dict):
 
 class Submission(dict):
     def __init__(self, email='', evaluation_setting=None, description=''):
-        evaluation_setting_id = evaluation_setting['id'] if evaluation_setting is not None else None
+        self.evaluation_setting = evaluation_setting
+
+        if self.evaluation_setting is None:
+            raise ValueError('Must set the evaluation_setting, when constructing a Submission.')
+
+        evaluation_setting_id = self.evaluation_setting['id'] if self.evaluation_setting is not None else None
 
         self.update({'metadata': {'email': email,
                                   'description': description,
@@ -203,7 +209,8 @@ class Submission(dict):
         data = json.dumps({'email': self['metadata']['email'],
                            'password': password,
                            'submission': self})
-        req = urllib2.Request('{}/submit_with_login'.format(BASE_URL),
+
+        req = urllib2.Request('{}/api/submit_with_login'.format(BASE_URL),
                               data, {'Content-Type': 'application/json'})
         f = urllib2.urlopen(req)
         resp = f.read()
@@ -223,17 +230,23 @@ class Submission(dict):
         return Job(response)
 
     def evaluate(self, password=''):
-        """Submits the participation to the web site.
+        """Evaluates the development set.
 
         The passwords is sent as plain text.
 
         :return: the evaluation results.
         """
 
-        data = json.dumps({'email': self['metadata']['email'],
+        # Make a copy only keeping the development set
+        dev_submission = copy.deepcopy(self)
+        dev_submission['tokens'] = {token_id: token for token_id, token in self['tokens'].items()
+                                    if token_id in self.evaluation_setting['development_set']}
+
+        data = json.dumps({'email': dev_submission['metadata']['email'],
                            'password': password,
-                           'submission': self})
-        req = urllib2.Request('{}/evaluate_with_login'.format(BASE_URL),
+                           'submission': dev_submission})
+
+        req = urllib2.Request('{}/api/evaluate_with_login'.format(BASE_URL),
                               data, {'Content-Type': 'application/json'})
         f = urllib2.urlopen(req)
         resp = f.read()
@@ -270,7 +283,7 @@ class Job(dict):
             logging.error('This job has not succeed.')
             return {}
 
-        req = urllib2.Request('{}/task/{}/status'.format(BASE_URL, self['task_id']))
+        req = urllib2.Request('{}/api/task/{}/status'.format(BASE_URL, self['task_id']))
 
         f = urllib2.urlopen(req)
         resp = f.read()
@@ -278,7 +291,7 @@ class Job(dict):
 
         return json.loads(resp)
 
-    def result(self):
+    def wait(self):
         widgets = ['Processing: ', pb.Percentage(), ' ', pb.Bar(), ' ', pb.ETA()]
 
         pbar = pb.ProgressBar(widgets=widgets, maxval=100).start()
@@ -301,16 +314,31 @@ class Job(dict):
             else:
                 pbar.update()
 
-            time.sleep(0.2)
+            time.sleep(1.0)
 
-        return task_status['result']
+        return
+
+    def result(self):
+        if 'task_id' not in self:
+            logging.error('This job has not succeed.')
+            return {}
+
+        req = urllib2.Request('{}/api/task/{}/result'.format(BASE_URL, self['task_id']))
+
+        f = urllib2.urlopen(req)
+        resp = f.read()
+        f.close()
+
+        data = json.loads(resp)
+
+        return data['task']['result']
 
     def ready(self):
         return self.status()['task']['status'] in self._ready_states
 
 
 def get_evaluation_setting(setting_id=None):
-    evaluation_setting_url = '{}/evaluation_setting'.format(BASE_URL)
+    evaluation_setting_url = '{}/api/evaluation_setting'.format(BASE_URL)
     if setting_id is not None:
         evaluation_setting_url += '/{}'.format(setting_id)
 
