@@ -15,7 +15,10 @@ import collections
 import re
 import shlex
 import urllib2
+import zipfile
+import StringIO
 import progressbar as pb
+from scipy.io import wavfile
 
 from . import common
 from . import edit_distance
@@ -24,6 +27,26 @@ import time
 UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://46.226.110.12:5000'
+
+
+def _load_zip_wav(zfile, offset=0, count=None):
+    """Load a wav file into an array from frame start to fram end
+
+    :param zfile: ZipExtFile file-like object from where to load the audio
+    :param offset: First sample to load
+    :param count: Maximum number of samples to load
+    :return: The audio samples in a numpy array of floats
+    """
+
+    buf = StringIO.StringIO(zfile.read())
+
+    sample_rate, audio = wavfile.read(buf)
+    audio = audio[offset:]
+
+    if count:
+        audio = audio[:count]
+
+    return sample_rate, audio
 
 
 def _get_url(url):
@@ -53,8 +76,10 @@ def _download_url(url, filename=None):
 
     meta = u.info()
 
-    reported_filename = shlex.split(re.findall(r'filename=(\S+)',
-                                               meta.getheaders('Content-Disposition')[0])[0])[0]
+    reported_filename = os.path.basename(url)
+    if meta.getheaders('Content-Disposition'):
+        reported_filename = shlex.split(re.findall(r'filename=(\S+)',
+                                                   meta.getheaders('Content-Disposition')[0])[0])[0]
 
     filename = filename or reported_filename
 
@@ -335,6 +360,25 @@ class Job(dict):
 
     def ready(self):
         return self.status()['task']['status'] in self._ready_states
+
+
+def download_dataset_audio(filename='dataset_audio.zip'):
+    return _download_url('{}/static/audio.zip'.format(BASE_URL), filename=filename)
+
+
+def get_token_audio(token_id, dataset_audio_filename, dataset):
+    token = dataset['tokens'][token_id]
+
+    with zipfile.ZipFile(dataset_audio_filename) as zf:
+        signal_name = 'confusionWavs/wavs/{}'.format(token['signal_wav'])
+
+        with zf.open(signal_name) as f:
+            sample_rate, signal_audio = _load_zip_wav(f)
+
+    speech_audio = signal_audio[:, 0]
+    noise_audio = signal_audio[:, 1]
+    
+    return sample_rate, speech_audio, noise_audio
 
 
 def get_evaluation_setting(setting_id=None):
