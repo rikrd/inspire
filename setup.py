@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name="inspire",
     packages=find_packages(),
-    version="1.0.4",
+    version="1.0.6",
     description="Helper library to participate in the INSPIRE challenge",
     author="Ricard Marxer",
     author_email="r.marxer@sheffield.ac.uk",
