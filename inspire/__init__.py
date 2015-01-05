@@ -448,11 +448,12 @@ def get_edit_scripts(pron_a, pron_b, edit_costs=(1.0, 1.0, 1.0)):
 
     distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b, op_costs=op_costs)
 
-    return [compress_edit_script(script.to_primitive()) for script in scripts]
+    return [full_edit_script(script.to_primitive()) for script in scripts]
 
 
-def compress_edit_script(script):
+def full_edit_script(script):
     previous_index = None
+    last_index = -1
 
     new_script = []
 
@@ -464,9 +465,19 @@ def compress_edit_script(script):
             new_op['from_symbol'] = new_op['from_symbol'] or ''
             new_op['to_symbol'] = new_op['to_symbol'] or ''
 
-            new_script.append(new_op)
-
             previous_index = op['index']
+
+            # Fill gaps
+            while last_index < op['index']-1:
+                new_script.append({'index': last_index + 1,
+                                   'from_symbol': '',
+                                   'to_symbol': '',
+                                   'op_code': 'noninsert'})
+
+                last_index = new_script[-1]['index']
+
+            new_script.append(new_op)
+            last_index = new_script[-1]['index']
 
         else:
             # Merge consecutive inserted symbols
@@ -477,6 +488,13 @@ def compress_edit_script(script):
             # (this doesn't happen since they have different indices)
             if new_script[-1]['from_symbol']:
                 new_script[-1]['from_symbol'] += ' {}'.format(op['from_symbol'])
+
+    if last_index % 2 == 1:
+        # Missing the last gap
+        new_script.append({'index': last_index + 1,
+                           'from_symbol': '',
+                           'to_symbol': '',
+                           'op_code': 'noninsert'})
 
     return new_script
 
@@ -533,6 +551,9 @@ def edit_script_to_strings(edit_script, use_colors=True):
             space = ' '*len(op['from_symbol'])
             src_txt += '{red}{from_symbol}{normal}'.format(**_combine_dicts(colors, op))
             dst_txt += '{on_red}{space}{normal}'.format(space=space, **_combine_dicts(colors, op))
+
+        elif op['op_code'] == 'noninsert':
+            continue
 
         src_txt += ' '
         dst_txt += ' '
