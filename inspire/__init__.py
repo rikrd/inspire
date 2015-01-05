@@ -194,12 +194,19 @@ class Submission(dict):
     def where_task(self, token_id, confusion_probability):
         self['tokens'].setdefault(token_id, {})['where'] = list(confusion_probability)
 
-    def what_task(self, token_id, index, phonemes, phonemes_probability):
+    def what_task(self, token_id, index, phonemes, phonemes_probability, warn=True):
+        if not 0. < phonemes_probability < 1. and warn:
+            logging.warning('Setting a probability of [{}] to phonemes [{}] for token [{}].\n '
+                            'Using probabilities of 0.0 or 1.0 '
+                            'may lead to likelihoods of -Infinity'.format(phonemes_probability,
+                                                                          phonemes,
+                                                                          token_id))
+
         self['tokens'].setdefault(token_id, {}) \
             .setdefault('what', {}) \
             .setdefault(str(index), {})[phonemes] = phonemes_probability
 
-    def full_task(self, token_id, pronunciation, pronunciation_probability):
+    def full_task(self, token_id, pronunciation, pronunciation_probability, warn=True):
         """Provide the prediction of the full task.
 
         This is function is used to predict the porbability of a given pronunciation being reported for a given token.
@@ -209,8 +216,12 @@ class Submission(dict):
         :param pronunciation_probability: The probability of the pronunciation for the given token
         """
 
-        if not 0. < pronunciation_probability < 1.:
-            logging.warning()
+        if not 0. < pronunciation_probability < 1. and warn:
+            logging.warning('Setting a probability of [{}] to pronunciation [{}] for token [{}].\n '
+                            'Using probabilities of 0.0 or 1.0 '
+                            'may lead to likelihoods of -Infinity'.format(pronunciation_probability,
+                                                                          pronunciation,
+                                                                          token_id))
 
         self['tokens'].setdefault(token_id, {}) \
             .setdefault('full', {})[pronunciation] = pronunciation_probability
@@ -437,7 +448,37 @@ def get_edit_scripts(pron_a, pron_b, edit_costs=(1.0, 1.0, 1.0)):
 
     distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b, op_costs=op_costs)
 
-    return [script.to_primitive() for script in scripts]
+    return [compress_edit_script(script.to_primitive()) for script in scripts]
+
+
+def compress_edit_script(script):
+    previous_index = None
+
+    new_script = []
+
+    for op in script:
+        if op['index'] != previous_index:
+            new_op = copy.copy(op)
+
+            # Convert None to ''
+            new_op['from_symbol'] = new_op['from_symbol'] or ''
+            new_op['to_symbol'] = new_op['to_symbol'] or ''
+
+            new_script.append(new_op)
+
+            previous_index = op['index']
+
+        else:
+            # Merge consecutive inserted symbols
+            if new_script[-1]['to_symbol']:
+                new_script[-1]['to_symbol'] += ' {}'.format(op['to_symbol'])
+
+            # Merge consecutive deleted symbols
+            # (this doesn't happen since they have different indices)
+            if new_script[-1]['from_symbol']:
+                new_script[-1]['from_symbol'] += ' {}'.format(op['from_symbol'])
+
+    return new_script
 
 
 def print_edit_script(edit_script):
