@@ -445,7 +445,7 @@ def get_edit_scripts(pron_a, pron_b, edit_costs=(1.0, 1.0, 1.0)):
     op_costs = {'insert': lambda x: edit_costs[0],
                 'match': lambda x, y: 0 if x == y else edit_costs[1],
                 'delete': lambda x: edit_costs[2]}
-
+    
     distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b, op_costs=op_costs)
 
     return [full_edit_script(script.to_primitive()) for script in scripts]
