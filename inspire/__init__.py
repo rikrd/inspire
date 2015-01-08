@@ -223,8 +223,17 @@ class Submission(dict):
                                                                           pronunciation,
                                                                           token_id))
 
+        key = pronunciation
+        if isinstance(key, list):
+            if not all([isinstance(phoneme, basestring) for phoneme in key]):
+                raise ValueError('The pronunciation must be of type string (a sequence of space separated phonemes) '
+                                 'or of type list (containing phonemes of type strings).'
+                                 'User supplied: {}'.format(key))
+
+            key = ' '.join(pronunciation)
+
         self['tokens'].setdefault(token_id, {}) \
-            .setdefault('full', {})[pronunciation] = pronunciation_probability
+            .setdefault('full', {})[key] = pronunciation_probability
 
     def save(self, filename):
         """Save the submission into a file.
