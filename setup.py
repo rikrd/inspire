@@ -34,6 +34,6 @@ The functions included in this module include:
 
 Additionally it contains functions to create, train and use speech recognition models using HTK.
 """,
-    requires=['numpy', 'docopt', 'grako', 'progressbar_ipython'],
-    install_requires=['numpy', 'docopt', 'grako', 'progressbar_ipython']
+    requires=['numpy', 'docopt', 'grako', 'progressbar_ipython', 'requests'],
+    install_requires=['numpy', 'docopt', 'grako', 'progressbar_ipython', 'requests']
 )

@@ -192,9 +192,31 @@ class Submission(dict):
                      'tokens': {}})
 
     def where_task(self, token_id, confusion_probability):
+        """Provide the prediction of the where task.
+
+        This function is used to predict the probability of a given pronunciation being reported for a given token.
+
+        :param token_id: The token for which the prediction is being provided
+        :param confusion_probability: The list or array of confusion probabilities at each index
+        :param phonemes_probability: The probability of the phoneme or phoneme sequence
+        """
+
         self['tokens'].setdefault(token_id, {})['where'] = list(confusion_probability)
 
     def what_task(self, token_id, index, phonemes, phonemes_probability, warn=True):
+        """Provide the prediction of the what task.
+
+        This function is used to predict the probability of a given phoneme being reported at a given index
+        for a given token.
+
+        :param token_id: The token for which the prediction is provided
+        :param index: The index of the token for which the prediction is provided
+        :param phonemes: The phoneme or phoneme sequence for which the prediction is being made
+        (as a space separated string)
+        :param phonemes_probability: The probability of the phoneme or phoneme sequence
+        :param warn: Set to False in order to avoid warnings about 0 or 1 probabilities
+        """
+
         if not 0. < phonemes_probability < 1. and warn:
             logging.warning('Setting a probability of [{}] to phonemes [{}] for token [{}].\n '
                             'Using probabilities of 0.0 or 1.0 '
@@ -209,11 +231,13 @@ class Submission(dict):
     def full_task(self, token_id, pronunciation, pronunciation_probability, warn=True):
         """Provide the prediction of the full task.
 
-        This is function is used to predict the porbability of a given pronunciation being reported for a given token.
+        This function is used to predict the probability of a given pronunciation being reported for a given token.
 
-        :param token_id: The token for which the prediction is being provided
-        :param pronunciation: The pronunciation for which the prediction is being provided
+        :param token_id: The token for which the prediction is provided
+        :param pronunciation: The pronunciation for which the prediction is being made (as a list of strings
+        or space separated string)
         :param pronunciation_probability: The probability of the pronunciation for the given token
+        :param warn: Set to False in order to avoid warnings about 0 or 1 probabilities
         """
 
         if not 0. < pronunciation_probability < 1. and warn:
