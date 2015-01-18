@@ -6,6 +6,7 @@ Collection of functions useful for the INSPIRE challenge.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import copy
+import gzip
 
 import json
 import logging
@@ -15,10 +16,14 @@ import collections
 import re
 import shlex
 import urllib2
+import io
+import requests
+import requests.exceptions
 import zipfile
 import StringIO
 import progressbar as pb
 from scipy.io import wavfile
+from contextlib import closing
 
 from . import common
 from . import edit_distance
@@ -50,69 +55,60 @@ def _load_zip_wav(zfile, offset=0, count=None):
 
 
 def _get_url(url):
-    try:
-        u = urllib2.urlopen(url)
-        resp = u.read()
-        u.close()
-    except urllib2.HTTPError:
+    r = requests.get(url)
+
+    if r.status_code != 200:
         logging.error('Could not get: \n'
                       '{}\n'
                       'Please check your internet connection.\n'
                       'If problem persists inform the challenge organizers.'.format(url))
         return '{}'
 
-    return resp
+    return r.content
 
 
 def _download_url(url, filename=None):
-    try:
-        u = urllib2.urlopen(url)
-    except urllib2.HTTPError:
-        logging.error('Could not download: \n'
-                      '{}\n'
-                      'Please check your internet connection.\n'
-                      'If problem persists inform the challenge organizers.'.format(url))
-        return None
+    with closing(requests.get(url, stream=True)) as r:
+        if r.status_code != 200:
+            logging.error('Could not download: \n'
+                          '{}\n'
+                          'Please check your internet connection.\n'
+                          'If problem persists inform the challenge organizers.'.format(url))
+            return None
 
-    meta = u.info()
+        reported_filename = os.path.basename(url)
+        if r.headers['Content-Disposition']:
+            reported_filename = shlex.split(re.findall(r'filename=(\S+)',
+                                                       r.headers['Content-Disposition'])[0])[0]
 
-    reported_filename = os.path.basename(url)
-    if meta.getheaders('Content-Disposition'):
-        reported_filename = shlex.split(re.findall(r'filename=(\S+)',
-                                                   meta.getheaders('Content-Disposition')[0])[0])[0]
+        filename = filename or reported_filename
 
-    filename = filename or reported_filename
+        if os.path.isfile(filename):
+            return filename
 
-    if os.path.isfile(filename):
-        u.close()
-        return filename
+        with open(filename, 'wb') as f:
+            file_size = r.headers.get('content-length')
 
-    f = open(filename, 'wb')
-    file_size = int(meta.getheaders("Content-Length")[0])
+            if file_size is None:  # no content length header
+                f.write(r.content)
+            else:
+                file_size_dl = 0
+                file_size = int(file_size)
 
-    widgets = ['Downloading: ', pb.Percentage(), ' ', pb.Bar(),
-               ' ', pb.ETA(), ' ', pb.FileTransferSpeed()]
+                widgets = ['Downloading: ', pb.Percentage(), ' ', pb.Bar(),
+                           ' ', pb.ETA(), ' ', pb.FileTransferSpeed()]
+                pbar = pb.ProgressBar(widgets=widgets, maxval=file_size).start()
+                chunk_size = 10240
+                for data in r.iter_content(chunk_size=chunk_size):
+                    file_size_dl = min(file_size_dl + chunk_size, file_size)
+                    f.write(data)
 
-    pbar = pb.ProgressBar(widgets=widgets, maxval=file_size).start()
+                    pbar.update(file_size_dl)
 
-    file_size_dl = 0
-    block_sz = 8192
-    while True:
-        download_buffer = u.read(block_sz)
-        if not download_buffer:
-            break
+                pbar.finish()
 
-        file_size_dl += len(download_buffer)
-        f.write(download_buffer)
+            print('Finished downloading {}'.format(filename))
 
-        pbar.update(file_size_dl)
-
-    pbar.finish()
-
-    print('Finished downloading {}'.format(filename))
-
-    f.close()
-    u.close()
     return filename
 
 
@@ -275,20 +271,26 @@ class Submission(dict):
         :return: the evaluation results.
         """
 
-        data = json.dumps({'email': self['metadata']['email'],
-                           'password': password,
-                           'submission': self})
+        data = {'email': self['metadata']['email'],
+                'password': password,
+                'submission': self}
 
-        req = urllib2.Request('{}/api/submit_with_login'.format(BASE_URL),
-                              data, {'Content-Type': 'application/json'})
-        f = urllib2.urlopen(req)
-        resp = f.read()
-        f.close()
-
+        url = '{}/api/submit_with_login'.format(BASE_URL)
         try:
-            response = json.loads(resp)
+            s = io.BytesIO()
+            with gzip.GzipFile(fileobj=s, mode='wb') as g:
+                g.write(json.dumps(data))
 
-        except urllib2.HTTPError as e:
+            gzipped_body = s.getvalue()
+
+            r = requests.post(url,
+                              data=gzipped_body,
+                              headers={'content-encoding': 'gzip',
+                                       'content-type': 'application/json'})
+
+            response = r.json()
+
+        except requests.exceptions.HTTPError as e:
             logging.error('Error while submitting the participation. {}'.format(e))
             return Job()
 
@@ -311,20 +313,26 @@ class Submission(dict):
         dev_submission['tokens'] = {token_id: token for token_id, token in self['tokens'].items()
                                     if token_id in self.evaluation_setting['development_set']}
 
-        data = json.dumps({'email': dev_submission['metadata']['email'],
-                           'password': password,
-                           'submission': dev_submission})
+        data = {'email': dev_submission['metadata']['email'],
+                'password': password,
+                'submission': dev_submission}
 
-        req = urllib2.Request('{}/api/evaluate_with_login'.format(BASE_URL),
-                              data, {'Content-Type': 'application/json'})
-        f = urllib2.urlopen(req)
-        resp = f.read()
-        f.close()
-
+        url = '{}/api/evaluate_with_login'.format(BASE_URL)
         try:
-            response = json.loads(resp)
+            s = io.BytesIO()
+            with gzip.GzipFile(fileobj=s, mode='wb') as g:
+                g.write(json.dumps(data))
 
-        except urllib2.HTTPError as e:
+            gzipped_body = s.getvalue()
+
+            r = requests.post(url,
+                              data=gzipped_body,
+                              headers={'content-encoding': 'gzip',
+                                       'content-type': 'application/json'})
+
+            response = r.json()
+
+        except requests.exceptions.HTTPError as e:
             logging.error('Error while submitting the participation. {}'.format(e))
             return Job()
 
@@ -352,13 +360,10 @@ class Job(dict):
             logging.error('This job has not succeed.')
             return {}
 
-        req = urllib2.Request('{}/api/task/{}/status'.format(BASE_URL, self['task_id']))
+        url = '{}/api/task/{}/status'.format(BASE_URL, self['task_id'])
+        r = requests.get(url)
 
-        f = urllib2.urlopen(req)
-        resp = f.read()
-        f.close()
-
-        return json.loads(resp)
+        return r.json()
 
     def wait(self):
         widgets = ['Processing: ', pb.Percentage(), ' ', pb.Bar(), ' ', pb.ETA()]
@@ -392,13 +397,10 @@ class Job(dict):
             logging.error('This job has not succeed.')
             return {}
 
-        req = urllib2.Request('{}/api/task/{}/result'.format(BASE_URL, self['task_id']))
+        url = '{}/api/task/{}/result'.format(BASE_URL, self['task_id'])
+        r = requests.get(url)
 
-        f = urllib2.urlopen(req)
-        resp = f.read()
-        f.close()
-
-        data = json.loads(resp)
+        data = r.json()
 
         return data['task']['result']
 
@@ -421,7 +423,7 @@ def get_token_audio(token_id, dataset_audio_filename, dataset):
 
     speech_audio = signal_audio[:, 0]
     noise_audio = signal_audio[:, 1]
-    
+
     return sample_rate, speech_audio, noise_audio
 
 
@@ -478,7 +480,7 @@ def get_edit_scripts(pron_a, pron_b, edit_costs=(1.0, 1.0, 1.0)):
     op_costs = {'insert': lambda x: edit_costs[0],
                 'match': lambda x, y: 0 if x == y else edit_costs[1],
                 'delete': lambda x: edit_costs[2]}
-    
+
     distance, scripts, costs, ops = edit_distance.best_transforms(pron_a, pron_b, op_costs=op_costs)
 
     return [full_edit_script(script.to_primitive()) for script in scripts]
