@@ -32,6 +32,7 @@ import time
 UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://46.226.110.12:5000'
+BASE_URL = 'http://localhost:5000'
 
 
 def _load_zip_wav(zfile, offset=0, count=None):
@@ -77,7 +78,7 @@ def _download_url(url, filename=None):
             return None
 
         reported_filename = os.path.basename(url)
-        if r.headers['Content-Disposition']:
+        if r.headers.get('Content-Disposition'):
             reported_filename = shlex.split(re.findall(r'filename=(\S+)',
                                                        r.headers['Content-Disposition'])[0])[0]
 
