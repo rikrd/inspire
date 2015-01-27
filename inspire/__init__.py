@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import copy
 import gzip
 
+import gzip
 import json
 import logging
 import os
@@ -175,17 +176,17 @@ class Lexicon(dict):
 
 
 class Submission(dict):
-    def __init__(self, email='', evaluation_setting=None, description=''):
-        self.evaluation_setting = evaluation_setting
+    def __init__(self, email='', evaluation_setting=None, description='', metadata={}):
+        self['metadata'] = metadata
 
-        if self.evaluation_setting is None:
+        if evaluation_setting:
+            self['metadata']['evaluation_setting_id'] = evaluation_setting['id']
+
+        if self['metadata']['evaluation_setting_id'] is None:
             raise ValueError('Must set the evaluation_setting, when constructing a Submission.')
 
-        evaluation_setting_id = self.evaluation_setting['id'] if self.evaluation_setting is not None else None
-
         self.update({'metadata': {'email': email,
-                                  'description': description,
-                                  'evaluation_setting_id': evaluation_setting_id},
+                                  'description': description},
                      'tokens': {}})
 
     def where_task(self, token_id, confusion_probability):
@@ -259,10 +260,49 @@ class Submission(dict):
     def save(self, filename):
         """Save the submission into a file.
 
-        :param filename: where to save the submission in JSON format
+        :param filename: where to save the submission
         """
-        with open(filename, 'w') as f:
-            json.dump(self, f, indent=2)
+        with gzip.open(filename, 'w') as z:
+            z.write(json.dumps(self['metadata']))
+            z.write('\n')
+
+            for token_id, token in self['tokens'].items():
+                z.write(json.dumps((token_id, token), sort_keys=True))
+                z.write('\n')
+
+    @staticmethod
+    def load(filename):
+        """Load the submission from a file.
+
+        :param filename: where to load the submission from
+        """
+        with gzip.open(filename, 'r') as z:
+            submission = Submission(metadata=json.loads(z.readline()))
+
+            for line in z:
+                token_id, token = json.loads(line)
+                submission['tokens'][token_id] = token
+
+        return submission
+
+    @staticmethod
+    def load_metadata(filename):
+        """Load the submission from a file.
+
+        :param filename: where to load the submission from
+        """
+        with gzip.open(filename, 'r') as z:
+            return json.loads(z.readline())
+
+    @staticmethod
+    def load_tokens(filename):
+        with gzip.open(filename, 'r') as z:
+            z.readline()  # skip the metadata
+
+            for line in z:
+                token = json.loads(line)
+
+                yield token
 
     def submit(self, password=''):
         """Submits the participation to the web site.
