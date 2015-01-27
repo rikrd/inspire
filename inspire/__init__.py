@@ -176,18 +176,17 @@ class Lexicon(dict):
 
 
 class Submission(dict):
-    def __init__(self, email='', evaluation_setting=None, description='', metadata={}):
-        self['metadata'] = metadata
+    def __init__(self, email=None, evaluation_setting=None, description=None, metadata={}):
+        self['metadata'] = {'email': email,
+                            'evaluation_setting': evaluation_setting,
+                            'description': description}
 
-        if evaluation_setting:
-            self['metadata']['evaluation_setting_id'] = evaluation_setting['id']
+        self['metadata'].update(metadata)
 
-        if self['metadata']['evaluation_setting_id'] is None:
+        if self['metadata']['evaluation_setting'] is None:
             raise ValueError('Must set the evaluation_setting, when constructing a Submission.')
 
-        self.update({'metadata': {'email': email,
-                                  'description': description},
-                     'tokens': {}})
+        self['tokens'] = {}
 
     def where_task(self, token_id, confusion_probability):
         """Provide the prediction of the where task.
@@ -257,26 +256,75 @@ class Submission(dict):
         self['tokens'].setdefault(token_id, {}) \
             .setdefault('full', {})[key] = pronunciation_probability
 
-    def save(self, filename):
-        """Save the submission into a file.
+    def dumps(self):
+        bytes = io.BytesIO()
+        self.dump(bytes)
+        return bytes.getvalue()
 
-        :param filename: where to save the submission
-        """
-        with gzip.open(filename, 'w') as z:
-            z.write(json.dumps(self['metadata']))
+    def dump(self, fileobj):
+        with gzip.GzipFile(fileobj=fileobj, mode='w') as z:
+            metadata = copy.copy(self['metadata'])
+            metadata['token_count'] = len(self['tokens'])
+
+            z.write(json.dumps(metadata))
             z.write('\n')
 
             for token_id, token in self['tokens'].items():
                 z.write(json.dumps((token_id, token), sort_keys=True))
                 z.write('\n')
 
+    def save(self, filename):
+        """Save the submission into a file.
+
+        :param filename: where to save the submission
+        """
+        with open(filename, 'w') as f:
+            self.dump(f)
+
+        return
+
+    # TODO: use a limit when ready http://bugs.python.org/issue15955
+
     @staticmethod
-    def load(filename):
-        """Load the submission from a file.
+    def open(filename):
+        """Open the submission from a file.
 
         :param filename: where to load the submission from
         """
-        with gzip.open(filename, 'r') as z:
+        with open(filename, 'r') as f:
+            return self.load(f)
+
+    @staticmethod
+    def open_metadata(filename):
+        """Open the submission from a file.
+
+        :param filename: where to load the submission from
+        """
+        with open(filename, 'r') as f:
+            return self.load_metadata(f)
+
+    @staticmethod
+    def open_tokens(filename):
+        """Open the submission from a file.
+
+        :param filename: where to load the submission from
+        """
+        with open(filename, 'r') as f:
+            return self.load_tokens(f)
+
+    @staticmethod
+    def loads(data):
+        fileobj = io.BytesIO(data)
+        return Submission.load(fileobj)
+
+    @staticmethod
+    def load(fileobj):
+        """Load the submission from a file-like object
+
+        :param fileobj: File-like object
+        :return: the loaded submission
+        """
+        with gzip.GzipFile(fileobj=fileobj, mode='r') as z:
             submission = Submission(metadata=json.loads(z.readline()))
 
             for line in z:
@@ -286,17 +334,27 @@ class Submission(dict):
         return submission
 
     @staticmethod
-    def load_metadata(filename):
+    def loads_metadata(data):
+        fileobj = io.BytesIO(data)
+        return Submission.load_metadata(fileobj)
+
+    @staticmethod
+    def load_metadata(fileobj):
         """Load the submission from a file.
 
         :param filename: where to load the submission from
         """
-        with gzip.open(filename, 'r') as z:
+        with gzip.GzipFile(fileobj=fileobj, mode='r') as z:
             return json.loads(z.readline())
 
     @staticmethod
-    def load_tokens(filename):
-        with gzip.open(filename, 'r') as z:
+    def loads_tokens(data):
+        fileobj = io.BytesIO(data)
+        return Submission.load_tokens(fileobj)
+
+    @staticmethod
+    def load_tokens(fileobj):
+        with gzip.GzipFile(fileobj=fileobj, mode='r') as z:
             z.readline()  # skip the metadata
 
             for line in z:
@@ -312,22 +370,12 @@ class Submission(dict):
         :return: the evaluation results.
         """
 
-        data = {'email': self['metadata']['email'],
-                'password': password,
-                'submission': self}
-
-        url = '{}/api/submit_with_login'.format(BASE_URL)
+        url = '{}/api/submit'.format(BASE_URL)
         try:
-            s = io.BytesIO()
-            with gzip.GzipFile(fileobj=s, mode='wb') as g:
-                g.write(json.dumps(data))
-
-            gzipped_body = s.getvalue()
-
             r = requests.post(url,
-                              data=gzipped_body,
-                              headers={'content-encoding': 'gzip',
-                                       'content-type': 'application/json'})
+                              data=self.dumps(),
+                              headers={'content-type': 'application/json'},
+                              auth=(self['metadata']['email'], password))
 
             response = r.json()
 
@@ -350,26 +398,18 @@ class Submission(dict):
         """
 
         # Make a copy only keeping the development set
-        dev_submission = copy.deepcopy(self)
-        dev_submission['tokens'] = {token_id: token for token_id, token in self['tokens'].items()
-                                    if token_id in self.evaluation_setting['development_set']}
+        dev_submission = self
+        if self['metadata'].get('evaluation_setting', {}).get('development_set', None):
+            dev_submission = copy.deepcopy(self)
+            dev_submission['tokens'] = {token_id: token for token_id, token in self['tokens'].items()
+                                        if token_id in self['metadata']['evaluation_setting']['development_set']}
 
-        data = {'email': dev_submission['metadata']['email'],
-                'password': password,
-                'submission': dev_submission}
-
-        url = '{}/api/evaluate_with_login'.format(BASE_URL)
+        url = '{}/api/evaluate'.format(BASE_URL)
         try:
-            s = io.BytesIO()
-            with gzip.GzipFile(fileobj=s, mode='wb') as g:
-                g.write(json.dumps(data))
-
-            gzipped_body = s.getvalue()
-
             r = requests.post(url,
-                              data=gzipped_body,
-                              headers={'content-encoding': 'gzip',
-                                       'content-type': 'application/json'})
+                              data=dev_submission.dumps(),
+                              headers={'content-type': 'application/json'},
+                              auth=(dev_submission['metadata']['email'], password))
 
             response = r.json()
 
