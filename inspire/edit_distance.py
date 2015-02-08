@@ -31,7 +31,7 @@ class Script:
 
         # The path cannot go any further
         if self.i < 0:
-            pass
+            raise ValueError('Path with a negative index')
 
     def to_primitive(self):
         return [op.to_primitive() for op in reversed(self.operations)]
@@ -40,7 +40,7 @@ class Script:
         return json.dumps(self.to_primitive())
 
     def finished(self):
-        return self.i < 0 and self.j < 0
+        return self.i == 0 and self.j == 0
 
     def print_colors(self):
         from blessings import Terminal
@@ -75,6 +75,53 @@ class Script:
         return u'{}'.format([u'{}'.format(op) for op in self.operations[::-1] if not op.from_symbol == op.to_symbol])
 
 
+def print_matrix(array, row_labels, col_labels, print_value=lambda x: '{}'.format(x)):
+    import pandas
+    printit = numpy.vectorize(print_value)
+    df = pandas.DataFrame(printit(array), index=row_labels, columns=col_labels)
+    print(df)
+
+
+def print_state(src, trg, ops, costs):
+    print_matrix(costs, src, trg)
+    print('\n\n')
+    print_matrix(ops, src, trg, print_value=lambda x: '({}{}{})'.format('m' if x[0] else ' ',
+                                                                        'i' if x[1] else ' ',
+                                                                        'd' if x[2] else ' '))
+
+
+def check_insert(s, t, costs, ops, i, j, cost_method):
+    _ = s
+    cost = costs[i, j-1] + cost_method(t[j])
+    if cost <= costs[i, j]:
+        if cost < costs[i, j]:
+            ops[i, j] = (False, False, False)
+
+        costs[i, j] = cost
+        ops[i, j]['insert'] = True
+
+
+def check_delete(s, t, costs, ops, i, j, cost_method):
+    _ = t
+    cost = costs[i-1, j] + cost_method(s[i])
+    if cost <= costs[i, j]:
+        if cost < costs[i, j]:
+            ops[i, j] = (False, False, False)
+
+        costs[i, j] = cost
+        ops[i, j]['delete'] = True
+
+
+def check_match(s, t, costs, ops, i, j, cost_method):
+    cost = costs[i-1, j-1] + cost_method(s[i], t[j])
+    if cost <= costs[i, j]:
+        if cost < costs[i, j]:
+            ops[i, j] = (False, False, False)
+
+        costs[i, j] = cost
+        ops[i, j]['match'] = True
+
+
 def best_transforms(src, trg, op_costs=None):
     default_costs = {'match': lambda x, y: 0 if x == y else 1,
                      'insert': lambda x: 1,
@@ -82,12 +129,12 @@ def best_transforms(src, trg, op_costs=None):
 
     op_costs = op_costs or default_costs
 
-    INSERT = op_costs['insert']
-    MATCH = op_costs['match']
-    DELETE = op_costs['delete']
+    insert_cost_method = op_costs['insert']
+    match_cost_method = op_costs['match']
+    delete_cost_method = op_costs['delete']
 
-    src_len = len(src)
-    trg_len = len(trg)
+    src_len = len(src) + 2
+    trg_len = len(trg) + 2
 
     # Initialize costs
     costs = numpy.ones((src_len, trg_len)) * numpy.inf
@@ -100,96 +147,71 @@ def best_transforms(src, trg, op_costs=None):
                                        'b']})
     ops = numpy.zeros((src_len, trg_len), dtype=op_type)
 
-    s = numpy.array(src)
-    t = numpy.array(trg)
+    s = numpy.r_[[''], numpy.array(src), ['']]
+    t = numpy.r_[[''], numpy.array(trg), ['']]
 
-    # Compute cost of 1st source item and 1st target item
-    costs[0, 0] = MATCH(s[0], t[0])
-    ops[0, 0]['match'] = True
-    i, j = 0, 0
+    # Set the cost of the initial cell
+    costs[0, 0] = 0
 
-    # Compute costs of 1st source item and nth target item
-    for j in xrange(1, costs.shape[1]):
-        costs[0, j] = sum([INSERT(t[k]) for k in xrange(j)]) + MATCH(s[0], t[j])
-        ops[0, j]['match'] = True
+    # Compute costs of inserting up to the nth target item
+    i = 0
+    for j in xrange(1, costs.shape[1]-1):
+        check_insert(s, t, costs, ops, i, j, insert_cost_method)
 
-    # Compute costs of 1st target item and nth source item
-    for i in xrange(1, costs.shape[0]):
-        costs[i, 0] = sum([DELETE(s[k]) for k in xrange(i)]) + MATCH(s[i], t[0])
-        ops[i, 0]['match'] = True
+    # Compute costs of deleting up to the nth source item
+    j = 0
+    for i in xrange(1, costs.shape[0]-1):
+        check_delete(s, t, costs, ops, i, j, delete_cost_method)
 
     # Compute costs of everything else
     for i in xrange(1, costs.shape[0]):
         for j in xrange(1, costs.shape[1]):
             # Replace cost
-            cost = costs[i - 1, j - 1] + MATCH(s[i], t[j])
-            if cost <= costs[i, j]:
-                if cost < costs[i, j]:
-                    ops[i, j] = (False, False, False)
-
-                costs[i, j] = cost
-                ops[i, j]['match'] = True
+            check_match(s, t, costs, ops, i, j, match_cost_method)
 
             # Delete cost
-            cost = costs[i - 1, j] + DELETE(s[i])
-            if cost <= costs[i, j]:
-                if cost < costs[i, j]:
-                    ops[i, j] = (False, False, False)
-
-                costs[i, j] = cost
-                ops[i, j]['delete'] = True
+            check_delete(s, t, costs, ops, i, j, delete_cost_method)
 
             # Insert cost
-            cost = costs[i, j - 1] + INSERT(t[j])
-            if cost <= costs[i, j]:
-                if cost < costs[i, j]:
-                    ops[i, j] = (False, False, False)
+            check_insert(s, t, costs, ops, i, j, insert_cost_method)
 
-                costs[i, j] = cost
-                ops[i, j]['insert'] = True
+    # Debug the state of the DP algorithm
+    # print_state(s, t, ops, costs)
 
     # Compute transforms by backtracking paths
-    paths = [Script(src_len - 1, trg_len - 1)]
+    paths = []
+    if ops[-1, -1]['match']:
+        paths.append(Script(src_len - 2, trg_len - 2))
+
+    if ops[-1, -1]['insert']:
+        paths.append(Script(src_len - 1, trg_len - 2))
+
+    if ops[-1, -1]['delete']:
+        paths.append(Script(src_len - 2, trg_len - 1))
+
     while not all(map(lambda x: x.finished(), paths)):
         new_paths = []
 
         for path in paths:
-            # Check if we have aligned up to the begining of target or source
-            if path.i < 0 or path.j < 0:
-                # If we are in the top left corner of the cost matrix we are finished
-                if path.finished():
-                    new_paths.append(path)
-                    continue
-
-                # Else we have to add the insertions or deletions required to reach it
-                else:
-                    for k in xrange(path.i, -1, -1):
-                        op = Operation('delete', k * 2 + 1, src[k], None)
-                        path.operations.append(op)
-                        path.i = k - 1
-
-                    for k in xrange(path.j, -1, -1):
-                        op = Operation('insert', 0, None, trg[k])
-                        path.operations.append(op)
-                        path.j = k - 1
-
-                    new_paths.append(path)
-                    continue
+            # If we are in the top left corner of the cost matrix we are finished
+            if path.finished():
+                new_paths.append(path)
+                continue
 
             if ops[path.i, path.j]['match']:
-                op = Operation('match', path.i * 2 + 1, src[path.i], trg[path.j])
+                op = Operation('match', (path.i-1) * 2 + 1, src[path.i-1], trg[path.j-1])
                 new_path = Script(path.i - 1, path.j - 1, path=path)
                 new_path.operations.append(op)
                 new_paths.append(new_path)
 
             if ops[path.i, path.j]['delete']:
-                op = Operation('delete', path.i * 2 + 1, src[path.i], None)
+                op = Operation('delete', (path.i-1) * 2 + 1, src[path.i-1], None)
                 new_path = Script(path.i - 1, path.j, path=path)
                 new_path.operations.append(op)
                 new_paths.append(new_path)
 
             if ops[path.i, path.j]['insert']:
-                op = Operation('insert', path.i * 2 + 2, None, trg[path.j])
+                op = Operation('insert', (path.i-1) * 2 + 2, None, trg[path.j-1])
                 new_path = Script(path.i, path.j - 1, path=path)
                 new_path.operations.append(op)
                 new_paths.append(new_path)
@@ -199,7 +221,7 @@ def best_transforms(src, trg, op_costs=None):
     return costs[i, j], paths, costs, ops
 
 
-if __name__ == '__main__':
+def main():
     a = u'm u ch a'
     b = u'm u ch o s'
 
@@ -222,4 +244,9 @@ if __name__ == '__main__':
     print('costs:\n{}'.format(costs))
     print('ops:\n{}'.format(ops))
     print(transfs[0].to_json())
-    for transf in transfs: transf.print_colors()
+    for transf in transfs:
+        transf.print_colors()
+
+
+if __name__ == '__main__':
+    main()

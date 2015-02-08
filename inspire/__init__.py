@@ -18,6 +18,7 @@ import re
 import shlex
 import urllib2
 import io
+import itertools
 import requests
 import requests.exceptions
 import zipfile
