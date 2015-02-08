@@ -71,8 +71,8 @@ class Script:
 
         print(u'---\n{}\n{}\n---'.format(src_txt, dst_txt))
 
-    def __repr__(self):
-        return u'{}'.format([u'{}'.format(op) for op in self.operations[::-1] if not op.from_symbol == op.to_symbol])
+    #def __repr__(self):
+    #    return u'{}'.format([u'{}'.format(op) for op in self.operations[::-1] if not op.from_symbol == op.to_symbol])
 
 
 def print_matrix(array, row_labels, col_labels, print_value=lambda x: '{}'.format(x)):
@@ -121,6 +121,8 @@ def check_match(s, t, costs, ops, i, j, cost_method):
         costs[i, j] = cost
         ops[i, j]['match'] = True
 
+class TERMINAL(object):
+    pass
 
 def best_transforms(src, trg, op_costs=None):
     default_costs = {'match': lambda x, y: 0 if x == y else 1,
@@ -153,19 +155,19 @@ def best_transforms(src, trg, op_costs=None):
     # Set the cost of the initial cell
     costs[0, 0] = 0
 
-    # Compute costs of inserting up to the nth target item
+    # Compute costs of inserting up to the nth target item before source
     i = 0
     for j in xrange(1, costs.shape[1]-1):
         check_insert(s, t, costs, ops, i, j, insert_cost_method)
 
-    # Compute costs of deleting up to the nth source item
+    # Compute costs of deleting up to the nth source item before target
     j = 0
     for i in xrange(1, costs.shape[0]-1):
         check_delete(s, t, costs, ops, i, j, delete_cost_method)
 
     # Compute costs of everything else
-    for i in xrange(1, costs.shape[0]):
-        for j in xrange(1, costs.shape[1]):
+    for i in xrange(1, costs.shape[0]-1):
+        for j in xrange(1, costs.shape[1]-1):
             # Replace cost
             check_match(s, t, costs, ops, i, j, match_cost_method)
 
@@ -175,11 +177,27 @@ def best_transforms(src, trg, op_costs=None):
             # Insert cost
             check_insert(s, t, costs, ops, i, j, insert_cost_method)
 
+    # Compute costs of inserting up to the nth target item after the source
+    i = costs.shape[0]-1
+    for j in xrange(1, costs.shape[1]):
+        check_insert(s, t, costs, ops, i, j, insert_cost_method)
+
+    # Compute costs of deleting up to the nth source item after the target
+    j = costs.shape[1]-1
+    for i in xrange(1, costs.shape[0]):
+        check_delete(s, t, costs, ops, i, j, delete_cost_method)
+
+    # Last match cost
+    i = costs.shape[0]-1
+    j = costs.shape[1]-1
+    check_match(s, t, costs, ops, i, j, match_cost_method)
+
     # Debug the state of the DP algorithm
     # print_state(s, t, ops, costs)
 
     # Compute transforms by backtracking paths
     paths = []
+
     if ops[-1, -1]['match']:
         paths.append(Script(src_len - 2, trg_len - 2))
 
@@ -189,7 +207,7 @@ def best_transforms(src, trg, op_costs=None):
     if ops[-1, -1]['delete']:
         paths.append(Script(src_len - 2, trg_len - 1))
 
-    while not all(map(lambda x: x.finished(), paths)):
+    while any(map(lambda x: not x.finished(), paths)):
         new_paths = []
 
         for path in paths:
@@ -230,6 +248,9 @@ def main():
 
     a = u'x e s t o'
     b = u'p ɾ i n θ e s a'
+
+    a = u'p e k ˈe ɲ o s'
+    b = u'p e k ˈe ɲ a s'
 
     if len(sys.argv) > 2:
         a = sys.argv[1]
