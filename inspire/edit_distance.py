@@ -1,11 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import collections
 
 import copy
 import sys
 import json
 
 import numpy
+
+
+def _combine_dicts(*args):
+    all_dict = []
+    for arg in args:
+        all_dict += list(arg.items())
+
+    return dict(all_dict)
 
 
 class Operation:
@@ -33,46 +42,73 @@ class Script:
         if self.i < 0:
             raise ValueError('Path with a negative index')
 
+    def finished(self):
+        return self.i == 0 and self.j == 0
+
     def to_primitive(self):
         return [op.to_primitive() for op in reversed(self.operations)]
 
     def to_json(self):
         return json.dumps(self.to_primitive())
 
-    def finished(self):
-        return self.i == 0 and self.j == 0
+    def to_strings(self, use_colors=True):
+        """Convert an edit script to a pair of strings representing the operation in a human readable way.
+
+        :param use_colors: Boolean indicating whether to use terminal color codes to color the output.
+        :return: Tuple with text corresponding to the first pronunciation and the text of the second one.
+        """
+
+        edit_script = self.to_primitive()
+
+        colors = collections.defaultdict(str)
+
+        if use_colors:
+            colors['red'] = '\x1b[31m'
+            colors['normal'] = '\x1b[m'
+            colors['green'] = '\x1b[32m'
+            colors['on_red'] = '\x1b[41m'
+
+        src_txt = ''
+        dst_txt = ''
+        for op in edit_script:
+            if op['op_code'] == 'match':
+                width = max(len(op['from_symbol']), len(op['to_symbol']))
+                if op['from_symbol'] == op['to_symbol']:
+                    src_txt += u'{green}{from_symbol: ^{width}}{normal}'.format(**_combine_dicts(colors,
+                                                                                                 op,
+                                                                                                 {'width': width}))
+                    dst_txt += u'{green}{to_symbol: ^{width}}{normal}'.format(**_combine_dicts(colors,
+                                                                                               op,
+                                                                                               {'width': width}))
+                else:
+                    src_txt += u'{red}{from_symbol: ^{width}}{normal}'.format(**_combine_dicts(colors,
+                                                                                               op,
+                                                                                               {'width': width}))
+                    dst_txt += u'{red}{to_symbol: ^{width}}{normal}'.format(**_combine_dicts(colors,
+                                                                                             op,
+                                                                                             {'width': width}))
+
+            elif op['op_code'] == 'insert':
+                space = ' '*len(op['to_symbol'])
+                src_txt += u'{on_red}{space}{normal}'.format(space=space, **_combine_dicts(colors,  op))
+                dst_txt += u'{red}{to_symbol}{normal}'.format(**_combine_dicts(colors, op))
+
+            elif op['op_code'] == 'delete':
+                space = ' '*len(op['from_symbol'])
+                src_txt += u'{red}{from_symbol}{normal}'.format(**_combine_dicts(colors, op))
+                dst_txt += u'{on_red}{space}{normal}'.format(space=space, **_combine_dicts(colors, op))
+
+            elif op['op_code'] == 'noninsert':
+                continue
+
+            src_txt += ' '
+            dst_txt += ' '
+
+        return src_txt, dst_txt
 
     def print_colors(self):
-        from blessings import Terminal
-
-        term = Terminal()
-
-        src_txt = u''
-        dst_txt = u''
-        for op in reversed(self.operations):
-            if op.op_code == 'match':
-                if op.from_symbol == op.to_symbol:
-                    src_txt += u'{t.green}{op.from_symbol}{t.normal}'.format(t=term, op=op)
-                    dst_txt += u'{t.green}{op.to_symbol}{t.normal}'.format(t=term, op=op)
-                else:
-                    src_txt += u'{t.red}{op.from_symbol}{t.normal}'.format(t=term, op=op)
-                    dst_txt += u'{t.red}{op.to_symbol}{t.normal}'.format(t=term, op=op)
-
-            elif op.op_code == 'insert':
-                src_txt += u'{t.on_red} {t.normal}'.format(t=term, op=op)
-                dst_txt += u'{t.red}{op.to_symbol}{t.normal}'.format(t=term, op=op)
-
-            elif op.op_code == 'delete':
-                src_txt += u'{t.red}{op.from_symbol}{t.normal}'.format(t=term, op=op)
-                dst_txt += u'{t.on_red} {t.normal}'.format(t=term, op=op)
-
-            src_txt += u' '
-            dst_txt += u' '
-
+        src_txt, dst_txt = self.to_strings()
         print(u'---\n{}\n{}\n---'.format(src_txt, dst_txt))
-
-    #def __repr__(self):
-    #    return u'{}'.format([u'{}'.format(op) for op in self.operations[::-1] if not op.from_symbol == op.to_symbol])
 
 
 def print_matrix(array, row_labels, col_labels, print_value=lambda x: '{}'.format(x)):
@@ -252,6 +288,9 @@ def main():
     a = u'p e k ˈe ɲ o s'
     b = u'p e k ˈe ɲ a s'
 
+    a = u'k ˈo ð o'
+    b = u'θ ˌe  θ e ð ˌi ʝ a  d ˌe ˌɛ f e θ ˌe  θ e ð ˈi ʝ a'
+
     if len(sys.argv) > 2:
         a = sys.argv[1]
         b = sys.argv[2]
@@ -261,13 +300,17 @@ def main():
 
     distance, transfs, costs, ops = best_transforms(src, trg)
 
+
     print('distance: {}'.format(distance))
     print('costs:\n{}'.format(costs))
     print('ops:\n{}'.format(ops))
     print(transfs[0].to_json())
+
     for transf in transfs:
         transf.print_colors()
 
+    print(json.dumps(transfs[0].to_primitive(), indent=4))
+    transfs[0].print_colors()
 
 if __name__ == '__main__':
     main()
