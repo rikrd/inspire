@@ -185,8 +185,10 @@ def best_transforms(src, trg, op_costs=None):
                                        'b']})
     ops = numpy.zeros((src_len, trg_len), dtype=op_type)
 
-    s = numpy.r_[[''], numpy.array(src), ['']]
-    t = numpy.r_[[''], numpy.array(trg), ['']]
+    #s = numpy.r_[[''], numpy.array(src), ['']]
+    #t = numpy.r_[[''], numpy.array(trg), ['']]
+    s = [None] + src + [None]
+    t = [None] + trg + [None]
 
     # Set the cost of the initial cell
     costs[0, 0] = 0
@@ -215,18 +217,20 @@ def best_transforms(src, trg, op_costs=None):
 
     # Compute costs of inserting up to the nth target item after the source
     i = costs.shape[0]-1
-    for j in xrange(1, costs.shape[1]):
+    for j in xrange(1, costs.shape[1]-1):
         check_insert(s, t, costs, ops, i, j, insert_cost_method)
 
     # Compute costs of deleting up to the nth source item after the target
     j = costs.shape[1]-1
-    for i in xrange(1, costs.shape[0]):
+    for i in xrange(1, costs.shape[0]-1):
         check_delete(s, t, costs, ops, i, j, delete_cost_method)
 
     # Last match cost
+    # This last element does not require a cost
+    # since it is matching end-of-seq to end-of-seq
     i = costs.shape[0]-1
     j = costs.shape[1]-1
-    check_match(s, t, costs, ops, i, j, match_cost_method)
+    check_match(s, t, costs, ops, i, j, lambda x, y: 0)
 
     # Debug the state of the DP algorithm
     # print_state(s, t, ops, costs)
