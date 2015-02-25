@@ -34,7 +34,6 @@ import time
 UTF8_NORMALIZATION = 'NFD'
 
 BASE_URL = 'http://46.226.110.12:5000'
-BASE_URL = 'http://localhost:5000'
 
 
 def _load_zip_wav(zfile, offset=0, count=None):
