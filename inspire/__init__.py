@@ -186,21 +186,144 @@ class Submission(dict):
         if self['metadata']['evaluation_setting'] is None:
             raise ValueError('Must set the evaluation_setting, when constructing a Submission.')
 
+        self['metadata']['token_default'] = Submission._baseline_defaults(evaluation_setting)
         self['tokens'] = {}
 
-    def where_task(self, token_id, confusion_probability):
+    @staticmethod
+    def _baseline_defaults(evaluation_setting):
+        esc = evaluation_setting['edits_and_symbols_counts']
+
+        ki = esc['edit_counts']['interphoneme']
+        kni = ki['0']
+        kti = sum(v for k, v in esc['edit_counts']['interphoneme'].items() if k != '0')
+
+        krkd = sum(v for k, v in esc['edit_counts']['phoneme'].items() if k != 'match')
+
+        kd = esc['edit_counts']['phoneme']['delete']
+        kr = esc['edit_counts']['phoneme']['replace']
+        km = esc['edit_counts']['phoneme']['match']
+
+        kc = esc['edit_counts']['word']['match']
+        ko = esc['edit_counts']['word']['replace']
+
+        kia = sum(esc['edit_counts']['interphoneme'].values())
+        kpa = sum(esc['edit_counts']['phoneme'].values())
+        kwa = sum(esc['edit_counts']['word'].values())
+
+        symbol_counts = esc['symbol_counts']
+
+        where_default = [kti/float(kia), krkd/float(kpa)]
+
+        what_default = {'0': {'': kni / kia},   # interphoneme positions
+                        '1': {'': kd/kpa,       # phoneme positions
+                              '=': km/kpa,
+                              '*': kr/kpa
+                              }
+                        }
+
+        # Create the insertions defaults
+        for k, v in ki.items():
+            if k == '0':
+                continue
+
+            length = int(k)
+
+            sym = '*' * length
+            prob = v / kia
+            what_default['0'][sym] = prob
+
+        full_default = {'=': kc / kwa,
+                        '*': ko / kwa}
+
+        defaults = {'where': where_default,
+                    'what': what_default,
+                    'full': full_default}
+
+        return defaults
+
+    def _where_default(self, pronunciation):
+        """Provide the default prediction of the where task.
+
+        This function is used to predict the probability of a given pronunciation being reported for a given token.
+
+        :param pronunciation: The list or array of confusion probabilities at each index
+        """
+
+        token_default = self['metadata']['token_default']['where']
+
+        index_count = 2*len(pronunciation) + 1
+        confusion_probability = [token_default[i % 2] for i in range(index_count)]
+
+        return confusion_probability
+
+    def _what_default(self, pronunciation):
+        """Provide the default prediction of the what task.
+
+        This function is used to predict the probability of a given pronunciation being reported for a given token.
+
+        :param pronunciation: The list or array of confusion probabilities at each index
+        """
+
+        token_default = self['metadata']['token_default']['what']
+        index_count = 2*len(pronunciation) + 1
+
+        predictions = {}
+        for i in range(index_count):
+            index_predictions = {}
+
+            if i % 2 == 0:
+                index_predictions.update(token_default['0'])
+
+            else:
+                presented_phoneme = pronunciation[int((i-1)/2)]
+                index_predictions[presented_phoneme] = token_default['1']['=']
+                index_predictions['*'] = token_default['1']['*']
+                index_predictions[''] = token_default['1']['']
+
+            predictions['{}'.format(i)] = index_predictions
+
+        return predictions
+
+    def _full_default(self, pronunciation):
+        """Provide the default prediction of the where task.
+
+        This function is used to predict the probability of a given pronunciation being reported for a given token.
+
+        :param pronunciation: The pronunciation of the token
+        """
+
+        token_default = self['metadata']['token_default']['full']
+
+        key = pronunciation
+        if isinstance(key, list):
+            if not all([isinstance(phoneme, basestring) for phoneme in key]):
+                raise ValueError('The pronunciation must be of type string (a sequence of space separated phonemes) '
+                                 'or of type list (containing phonemes of type strings).'
+                                 'User supplied: {}'.format(key))
+
+            key = ' '.join(pronunciation)
+
+        predictions = {key: token_default['='],
+                       '*': token_default['*']}
+
+        return predictions
+
+    def where_task(self, token_id, presented_pronunciation, confusion_probability):
         """Provide the prediction of the where task.
 
         This function is used to predict the probability of a given pronunciation being reported for a given token.
 
         :param token_id: The token for which the prediction is being provided
         :param confusion_probability: The list or array of confusion probabilities at each index
-        :param phonemes_probability: The probability of the phoneme or phoneme sequence
         """
+        self['tokens'].setdefault(token_id, {}) \
+            .setdefault('where', self._where_default(presented_pronunciation))
 
-        self['tokens'].setdefault(token_id, {})['where'] = list(confusion_probability)
+        if confusion_probability is not None:
+            self['tokens'][token_id]['where'] = list(confusion_probability)
 
-    def what_task(self, token_id, index, phonemes, phonemes_probability, warn=True):
+    def what_task(self, token_id, presented_pronunciation, index, phonemes, phonemes_probability,
+                  warn=True, default=True):
         """Provide the prediction of the what task.
 
         This function is used to predict the probability of a given phoneme being reported at a given index
@@ -212,20 +335,43 @@ class Submission(dict):
         (as a space separated string)
         :param phonemes_probability: The probability of the phoneme or phoneme sequence
         :param warn: Set to False in order to avoid warnings about 0 or 1 probabilities
+        :param default: Set to False in order to avoid generating the default probabilities
         """
 
-        if not 0. < phonemes_probability < 1. and warn:
+        if phonemes_probability is not None and not 0. < phonemes_probability < 1. and warn:
             logging.warning('Setting a probability of [{}] to phonemes [{}] for token [{}].\n '
                             'Using probabilities of 0.0 or 1.0 '
                             'may lead to likelihoods of -Infinity'.format(phonemes_probability,
                                                                           phonemes,
                                                                           token_id))
 
-        self['tokens'].setdefault(token_id, {}) \
-            .setdefault('what', {}) \
-            .setdefault(str(index), {})[phonemes] = phonemes_probability
+        default_preds = self._what_default(presented_pronunciation) if default else {}
 
-    def full_task(self, token_id, pronunciation, pronunciation_probability, warn=True):
+        self['tokens'].setdefault(token_id, {}) \
+            .setdefault('what', default_preds)
+
+        if index is not None:
+            self['tokens'][token_id]['what'].setdefault(str(index), {})
+
+        if phonemes is not None:
+            if phonemes_probability is not None and index is not None:
+                self['tokens'][token_id]['what'][str(index)][phonemes] = phonemes_probability
+
+            else:
+                if index is not None:
+                    if phonemes in default_preds[str(index)]:
+                        self['tokens'][token_id]['what'][str(index)][phonemes] = default_preds[str(index)][phonemes]
+                    else:
+                        self['tokens'][token_id]['what'][str(index)].pop(phonemes)
+
+                else:
+                    if str(index) in default_preds:
+                        self['tokens'][token_id]['what'][str(index)] = default_preds[str(index)]
+                    else:
+                        self['tokens'][token_id]['what'].pop(str(index))
+
+    def full_task(self, token_id, presented_pronunciation, pronunciation, pronunciation_probability,
+                  warn=True, default=True):
         """Provide the prediction of the full task.
 
         This function is used to predict the probability of a given pronunciation being reported for a given token.
@@ -235,9 +381,10 @@ class Submission(dict):
         or space separated string)
         :param pronunciation_probability: The probability of the pronunciation for the given token
         :param warn: Set to False in order to avoid warnings about 0 or 1 probabilities
+        :param default: Set to False in order to avoid generating the default probabilities
         """
 
-        if not 0. < pronunciation_probability < 1. and warn:
+        if pronunciation_probability is not None and not 0. < pronunciation_probability < 1. and warn:
             logging.warning('Setting a probability of [{}] to pronunciation [{}] for token [{}].\n '
                             'Using probabilities of 0.0 or 1.0 '
                             'may lead to likelihoods of -Infinity'.format(pronunciation_probability,
@@ -253,13 +400,26 @@ class Submission(dict):
 
             key = ' '.join(pronunciation)
 
+        default_preds = self._full_default(presented_pronunciation) if default else {}
+
         self['tokens'].setdefault(token_id, {}) \
-            .setdefault('full', {})[key] = pronunciation_probability
+            .setdefault('full', default_preds)
+
+        if key is not None:
+            if pronunciation_probability is not None:
+                self['tokens'][token_id]['full'][key] = pronunciation_probability
+
+            else:
+                if key in default_preds:
+                    self['tokens'][token_id]['full'][key] = default_preds[key]
+
+                else:
+                    self['tokens'][token_id]['full'].pop(key)
 
     def dumps(self):
-        bytes = io.BytesIO()
-        self.dump(bytes)
-        return bytes.getvalue()
+        buff = io.BytesIO()
+        self.dump(buff)
+        return buff.getvalue()
 
     def dump(self, fileobj):
         with gzip.GzipFile(fileobj=fileobj, mode='w') as z:
@@ -292,7 +452,7 @@ class Submission(dict):
         :param filename: where to load the submission from
         """
         with open(filename, 'r') as f:
-            return self.load(f)
+            return Submission.load(f)
 
     @staticmethod
     def open_metadata(filename):
@@ -301,7 +461,7 @@ class Submission(dict):
         :param filename: where to load the submission from
         """
         with open(filename, 'r') as f:
-            return self.load_metadata(f)
+            return Submission.load_metadata(f)
 
     @staticmethod
     def open_tokens(filename):
@@ -310,7 +470,7 @@ class Submission(dict):
         :param filename: where to load the submission from
         """
         with open(filename, 'r') as f:
-            return self.load_tokens(f)
+            return Submission.load_tokens(f)
 
     @staticmethod
     def loads(data):
