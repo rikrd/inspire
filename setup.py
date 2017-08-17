@@ -2,9 +2,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="inspire",
+    name="inspirespeech",
     packages=find_packages(),
-    version="1.0.9",
+    version="1.0.10",
     description="Helper library to participate in the INSPIRE challenge",
     author="Ricard Marxer",
     author_email="r.marxer@sheffield.ac.uk",
